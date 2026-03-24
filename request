@@ -1,0 +1,223 @@
+Explication détaillée du document request.pdf
+
+Ce document décrit un workshop complet pour apprendre à sécuriser une application Spring Boot avec Angular en utilisant Spring Security, JWT, MySQL et les bonnes pratiques. Voici une synthèse structurée de son contenu :
+🎯 Objectifs pédagogiques
+
+À la fin du workshop, l'apprenant sera capable de :
+
+    Construire une API REST sécurisée avec Spring Boot, Spring Security, JWT et MySQL.
+
+    Implémenter l'authentification et l'autorisation avec mots de passe chiffrés et contrôle d'accès basé sur les rôles (TEACHER, STUDENT).
+
+    Concevoir un workflow complet de réinitialisation de mot de passe (forgot/reset) avec jetons sécurisés.
+
+    Développer un frontend Angular simple avec authentification, interceptor JWT et protection des routes.
+
+📚 Introduction
+
+Les applications modernes doivent être sécurisées, scalables et accessibles par différents clients (web, mobile). La sécurité doit être intégrée dès la conception. Ce workshop adopte une approche stateless avec JWT, idéale pour les architectures REST.
+🛡️ Concepts clés de Spring Security
+
+    Authentication : vérification de l'identité (email/mot de passe). Spring Security fournit des mécanismes pour charger les utilisateurs depuis la BDD et protéger les endpoints.
+
+    Authorization : détermine ce qu'un utilisateur authentifié peut faire (basé sur les rôles). Permet de restreindre l'accès aux endpoints par rôle.
+
+🏗️ Architecture du projet (backend)
+
+Le projet suit une architecture en couches avec les packages suivants :
+
+    Controller : gestion des requêtes HTTP.
+
+    Domain : entités JPA (User, Role…).
+
+    DTO : objets de transfert de données (évite d'exposer les entités).
+
+    Exception : gestion centralisée des erreurs.
+
+    Repository : accès aux données (Spring Data JPA).
+
+    Security : configuration Spring Security, JWT, filtres, etc.
+
+    Service : logique métier.
+
+🔧 Étapes backend détaillées
+1. Création du projet Spring Boot
+
+    Version 3.5.x, Java 21, Maven.
+
+    Dépendances : Spring Web, Spring Data JPA, MySQL Driver, Spring Security, Lombok.
+
+    Ajout des dépendances JWT (jjwt).
+
+2. Configuration de la base de données
+
+    application.properties : configuration MySQL, JPA, et propriétés JWT (secret, expiration).
+
+3. Entité User
+
+    Avec champs : id, fullName, email (unique), password, rôle (enum), enabled.
+
+    Annotations JPA et Lombok.
+
+4. Repository UserRepository
+
+    Méthode findByEmail pour la recherche par email.
+
+5. Configuration du chiffrement des mots de passe
+
+    PasswordConfig avec BCryptPasswordEncoder.
+
+6. Implémentation de CustomUserDetailsService
+
+    Charge un utilisateur par email et le convertit en UserDetails Spring Security (avec rôles préfixés ROLE_).
+
+7. Service JWT (JwtService)
+
+    Génération, validation et extraction des informations du token.
+
+    Utilise une clé secrète et une durée d'expiration configurables.
+
+8. Filtre JWT (JwtAuthFilter)
+
+    Intercepte chaque requête, extrait le token de l'en-tête Authorization, valide le token et authentifie l'utilisateur dans le contexte de sécurité.
+
+9. Configuration de sécurité (SecurityConfig)
+
+    Désactive CSRF (stateless).
+
+    Active CORS pour Angular (http://localhost:4200).
+
+    Gestion de session sans état (STATELESS).
+
+    Règles d'autorisation :
+
+        /auth/** : public (inscription, login, forgot/reset)
+
+        /student/** : réservé au rôle STUDENT
+
+        /teacher/** : réservé au rôle TEACHER
+
+        autres endpoints : nécessitent authentification
+
+    Ajout du filtre JWT avant UsernamePasswordAuthenticationFilter.
+
+    Configuration CORS détaillée (méthodes, en-têtes, credentials).
+
+10. DTOs
+
+    RegisterRequest, LoginRequest, AuthResponse (souvent en records Java).
+
+11. Service d'authentification (IAuthService et IAuthServiceImp)
+
+    register : validation email unique, chiffrement mot de passe, sauvegarde.
+
+    login : authentification via AuthenticationManager, génération du token JWT, renvoi du token + email + rôle.
+
+12. Contrôleurs REST
+
+    AuthController : endpoints /auth/register et /auth/login.
+
+    DemoController : endpoints /student/hello et /teacher/hello (protégés par rôle).
+
+13. Gestion globale des exceptions
+
+    GlobalExceptionHandler avec @RestControllerAdvice pour renvoyer des réponses JSON propres en cas d'erreur (ex: IllegalArgumentException).
+
+🖥️ Partie frontend Angular
+1. Création du projet Angular
+
+    ng new DemoSecurityAngular --no-standalone
+
+    Options : routing = oui, style = CSS.
+
+2. Configuration
+
+    Ajout des modules : FormsModule, ReactiveFormsModule, HttpClientModule dans app.module.ts.
+
+    Création des fichiers d'environnement (environment.ts et environment.development.ts) avec baseUrl: 'http://localhost:8080'.
+
+3. Services
+
+    AuthService : méthodes register, login, logout. Stockage des informations (token, email, rôle) dans localStorage.
+
+    DemoService : méthodes studentHello() et teacherHello() pour appeler les endpoints protégés.
+
+4. Intercepteur HTTP (AuthInterceptor)
+
+    Ajoute automatiquement l'en-tête Authorization: Bearer <token> à chaque requête sortante si le token existe.
+
+    Enregistré dans les providers du module.
+
+5. Composants (pages)
+
+    RegisterComponent : formulaire d'inscription avec nom, email, mot de passe, choix du rôle (STUDENT/TEACHER). Appelle AuthService.register.
+
+    LoginComponent : formulaire de connexion. Appelle AuthService.login, stocke les données et redirige vers la page correspondant au rôle.
+
+    StudentComponent : affiche un message obtenu depuis /student/hello (appel via DemoService) et un bouton logout.
+
+    TeacherComponent : similaire avec /teacher/hello.
+
+    Les templates HTML sont fournis (utilisent Bootstrap pour le style).
+
+6. Guards (protection des routes)
+
+    AuthGuard : vérifie la présence du token pour autoriser l'accès aux pages protégées (student, teacher).
+
+    GuestGuard : empêche les utilisateurs connectés d'accéder aux pages login/register (redirige vers leur page de rôle).
+
+    RoleGuard : vérifie que le rôle de l'utilisateur correspond au rôle requis (défini dans les données de la route).
+
+7. Routage (app-routing.module.ts)
+
+    Définition des routes avec les guards :
+
+        '' → redirige vers login
+
+        login → LoginComponent (GuestGuard)
+
+        register → RegisterComponent (GuestGuard)
+
+        student → StudentComponent (AuthGuard + RoleGuard avec rôle ROLE_STUDENT)
+
+        teacher → TeacherComponent (AuthGuard + RoleGuard avec rôle ROLE_TEACHER)
+
+        ** → redirige vers login
+
+🔄 Fonctionnalités supplémentaires (en fin de PDF)
+1. Mot de passe oublié (Forgot password)
+
+    Endpoint POST /auth/forgot-password avec {email}.
+
+    Vérifier l'existence de l'email.
+
+    Générer un token unique (non JWT) et le stocker en base avec une date d'expiration (entité PasswordResetToken).
+
+    Envoyer un email (ex: via Mailtrap) contenant un lien de réinitialisation : http://localhost:4200/reset-password?token=....
+
+2. Réinitialisation du mot de passe (Reset password)
+
+    Endpoint POST /auth/reset-password avec {token, newPassword}.
+
+    Valider le token (existence, non expiré, non utilisé).
+
+    Encoder le nouveau mot de passe et le sauvegarder.
+
+    Marquer le token comme utilisé.
+
+3. Modification du profil (Edit profile)
+
+    Endpoint PUT /profile (accessible uniquement aux utilisateurs authentifiés).
+
+    Récupérer l'utilisateur connecté via SecurityContextHolder.
+
+    Permettre la modification du fullName, de l'email (avec vérification d'unicité) et du mot de passe (avec vérification de l'ancien mot de passe).
+
+🧪 Tests et validation
+
+    Avec Postman : tester les endpoints d'inscription, connexion, accès protégés (avec et sans token).
+
+    Avec l'interface Angular : vérifier le flux complet : inscription → connexion → redirection vers la bonne page → appel aux endpoints protégés → déconnexion.
+
+    Exemples de comptes : créer des utilisateurs avec les rôles STUDENT et TEACHER pour tester les restrictions.
+

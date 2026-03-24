@@ -1,0 +1,394 @@
+SQUELETTE GENERAL DU PROJET
+===========================
+
+Backend : Spring Boot (package tn.esprit.exam)
+Frontend : Angular 17 (dossier frontend/)
+
+Le backend expose une API REST sous /api/... et le frontend Angular consomme ces
+endpoints via HttpClient (services Angular + quelques composants backoffice).
+
+
+1. BACKEND SPRING BOOT
+======================
+
+1.1 Point d’entrée
+------------------
+- [ExamApplication](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/ExamApplication.java#L1-L13)
+  démarre Spring Boot, scanne les beans et lance l’API.
+
+1.2 Configuration CORS (CorsConfig)
+-----------------------------------
+- Fichier : [CorsConfig.java](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/config/CorsConfig.java#L1-L28)
+- Rôle :
+  - Autoriser le frontend Angular (http://localhost:4200) à appeler le backend.
+  - Méthodes autorisées : GET, POST, PUT, DELETE, OPTIONS.
+  - Headers autorisés/exposés : "*".
+  - Credentials autorisés : true.
+- Concrètement :
+  - Spring ajoute un filtre `CorsFilter` sur tous les endpoints (`/**`).
+  - Sans cette classe, le navigateur bloquerait les appels Angular → Spring
+    (erreurs CORS dans la console).
+
+1.3 Initialisation de données (DataInitializer)
+-----------------------------------------------
+- Fichier : [DataInitializer.java](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/config/DataInitializer.java#L1-L20)
+- Rôle :
+  - Ne fait **aucun insert** direct.
+  - Se contente de logger que les données sont chargées via data.sql.
+- Les vrais inserts sont dans :
+  - [data.sql](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/resources/data.sql)
+  - Exécuté au démarrage grâce à `spring.sql.init.mode=always`.
+- Pourquoi garder cette classe ?
+  - Pour ne pas casser un éventuel appel `DataInitializer` déjà référencé.
+  - Pour documenter clairement que le seeding passe par data.sql.
+
+1.4 DTO "métier" (package tn.esprit.exam.dto)
+---------------------------------------------
+Ces DTO sont utilisés par les services et parfois par les contrôleurs. Ils
+représentent la forme "plate" échangée avec le frontend ou d’autres clients.
+
+- [CampingSiteDTO](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/dto/CampingSiteDTO.java#L1-L54)
+  - Champs : id, name, description, location, address, pricePerNight, capacity,
+    category, imageUrl, flags (hasWifi, hasParking, ...), isActive, isVerified,
+    rating, reviewCount, ownerId, ownerName.
+  - Validations jakarta : @NotBlank, @NotNull, @DecimalMin, @Min.
+  - Utilisé dans [CampingSiteServiceImpl](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/service/CampingSiteServiceImpl.java#L1-L200)
+    comme objet d’entrée/sortie. Le contrôleur `CampingSiteController` actuel
+    renvoie encore des entités `CampingSite`, mais le service est déjà DTO‑isé.
+
+- [EquipmentDTO](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/dto/EquipmentDTO.java#L1-L43)
+  - Champs : id, name, description, category, pricePerDay, stockQuantity,
+    availableQuantity, imageUrl, specifications, isActive, rating, reviewCount,
+    providerId, providerName.
+  - Utilisé dans [EquipmentServiceImpl](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/service/EquipmentServiceImpl.java#L1-L174)
+    pour isoler l’API des entités JPA.
+
+- [ReservationEquipmentDTO](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/dto/ReservationEquipmentDTO.java#L1-L28)
+  - Champs : id, equipmentId, equipmentName, equipmentCategory, quantity,
+    pricePerDay, subtotal.
+  - Utilisé à l’intérieur de [ReservationDTO](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/dto/ReservationDTO.java#L1-L47)
+    et dans [ReservationServiceImpl](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/service/ReservationServiceImpl.java#L1-L220)
+    pour gérer le matériel loué avec une réservation.
+
+- [ReservationDTO](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/dto/ReservationDTO.java#L1-L47)
+  - Champs : id, reservationNumber, checkInDate, checkOutDate, numberOfGuests,
+    totalPrice, status, specialRequests, campingSiteId + infos site,
+    camperId + infos camper, liste de ReservationEquipmentDTO, contractId.
+  - Utilisé par :
+    - [ReservationServiceImpl](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/service/ReservationServiceImpl.java#L1-L220)
+    - [BookingController](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/controller/BookingController.java#L1-L105)
+      qui construit un DTO à partir d’un `Map<String,Object>` reçu du frontend.
+
+- [ContractDTO](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/dto/ContractDTO.java#L1-L29)
+  - Champs : id, contractNumber, terms, isSigned, signedAt, signatureUrl,
+    status, reservationId, reservationNumber.
+  - Utilisé par :
+    - [ContractController](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/controller/ContractController.java#L1-L93)
+      qui expose une API 100% basée sur ContractDTO (toDTO / fromDTO).
+
+Résumé : **les DTO du package `tn.esprit.exam.dto` sont réellement utilisés**
+par les services métier et certains contrôleurs (bookings, contracts, etc.).
+
+
+1.5 DTO "Angular" (package tn.esprit.exam.dto.angular)
+------------------------------------------------------
+Ce package contient des DTO pensés pour matcher exactement les interfaces
+TypeScript côté Angular. Ils sont convertis par un service dédié.
+
+Classes :
+- [AngularUserDTO](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/dto/angular/AngularUserDTO.java#L1-L26)
+- [AngularSiteDTO](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/dto/angular/AngularSiteDTO.java#L1-L62)
+- [AngularEquipmentDTO](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/dto/angular/AngularEquipmentDTO.java#L1-L32)
+- [AngularBookingDTO](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/dto/angular/AngularBookingDTO.java#L1-L30)
+- [AngularAuthResponseDTO](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/dto/angular/AngularAuthResponseDTO.java#L1-L16)
+
+Convertisseur :
+- [AngularDTOConverter](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/service/AngularDTOConverter.java#L1-L164)
+  - Méthodes : toAngularUser, toAngularSite, toAngularBooking, toAngularAuthResponse,
+    toAngularEquipment.
+
+Important : **actuellement aucun contrôleur n’utilise ces DTO Angular**.
+- Ils sont préparés pour une éventuelle API dédiée (ex : /api/angular/...), mais
+  les contrôleurs existants renvoient :
+  - soit des entités JPA (CampingSiteController, EquipmentController...)
+  - soit les DTO "métier" classiques (ReservationDTO, ContractDTO)
+  - soit des `Map<String,Object>` (AuthController).
+
+Donc :
+- Les DTO du package `dto.angular` sont surtout **préparés** / réutilisables,
+  mais **pas encore exposés** directement par les endpoints que le frontend
+  actuel utilise.
+
+
+1.6 Exceptions (package tn.esprit.exam.exception)
+-------------------------------------------------
+
+- [BusinessLogicException](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/exception/BusinessLogicException.java#L1-L8)
+- [ResourceNotFoundException](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/exception/ResourceNotFoundException.java#L1-L8)
+- [UnauthorizedException](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/exception/UnauthorizedException.java#L1-L8)
+- [ValidationException](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/exception/ValidationException.java#L1-L8)
+- [GlobalExceptionHandler](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/exception/GlobalExceptionHandler.java#L1-L67)
+
+Usage typique :
+- Les services (ex : [AuthServiceImpl](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/service/AuthServiceImpl.java#L1-L127),
+  [ReservationServiceImpl](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/service/ReservationServiceImpl.java#L1-L220),
+  [CampingSiteServiceImpl](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/service/CampingSiteServiceImpl.java#L1-L200))
+  lèvent ces exceptions lorsqu’une règle métier n’est pas respectée ou qu’une
+  ressource est introuvable.
+
+- [GlobalExceptionHandler](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/exception/GlobalExceptionHandler.java#L1-L67)
+  intercepte ces exceptions et renvoie une réponse JSON uniforme :
+  - champs : status, error, message
+  - codes HTTP : 400 (validation / business), 401, 404, 500, etc.
+
+Résultat : le frontend reçoit toujours une structure d’erreur cohérente, qu’il
+peut afficher à l’utilisateur.
+
+
+1.7 Utilitaires (ValidationUtil et regex)
+----------------------------------------
+
+- Fichier : [ValidationUtil.java](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/util/ValidationUtil.java#L1-L24)
+- Contenu :
+  - `EMAIL_PATTERN` : Pattern regex compilé.
+    - `"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}$"` (case insensitive).
+  - `isValidEmail(String email)` : applique ce pattern.
+
+Pourquoi une regex ?
+- Pour faire un contrôle **rapide et centralisé** de la forme d’un email.
+- Évite d’avoir des `if` manuels répétés partout.
+
+Où utilisé ?
+- Dans [AuthServiceImpl.register](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/service/AuthServiceImpl.java#L26-L48) :
+  - Si `ValidationUtil.isValidEmail(email)` est false → `ValidationException`.
+- La logique fonctionnelle (email unique, longueur du mot de passe, etc.)
+  reste dans le service, mais la **syntaxe de l’email** est validée par la
+  regex.
+
+
+2. FRONTEND ANGULAR
+===================
+
+2.1 Type d’architecture (standalone vs modules)
+-----------------------------------------------
+
+- [main.ts](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/main.ts#L1-L16)
+  utilise `bootstrapApplication(AppComponent, { providers: [...] })`.
+- [AppComponent](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/app.component.ts#L1-L14)
+  est déclaré avec `standalone: true`.
+- Les routes (`app.routes.ts`, `frontoffice.routes.ts`, `backoffice.routes.ts`)
+  chargent des composants avec `loadComponent`.
+
+Conclusion : **Angular est en mode standalone**, il n’y a pas d’AppModule /
+NgModule classique. Les composants frontoffice/backoffice sont tous standalone.
+
+
+2.2 Routing et structure
+------------------------
+
+- [app.routes.ts](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/app.routes.ts#L1-L21)
+  - `path: 'frontoffice'` → [FRONTOFFICE_ROUTES](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/frontoffice/frontoffice.routes.ts#L1-L29)
+  - `path: 'backoffice'` → [BACKOFFICE_ROUTES](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/backoffice/backoffice.routes.ts#L1-L37)
+
+- Frontoffice :
+  - home, camping-sites, equipment, login, register.
+- Backoffice :
+  - dashboard, sites, orders, users, billing, contracts, bookings.
+
+L’app racine affiche juste `<router-outlet>` et laisse les routes charger les
+composants standalone.
+
+
+2.3 Dossier core (auth.guard, auth.interceptor)
+----------------------------------------------
+
+- [auth.guard.ts](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/core/auth.guard.ts#L1-L4)
+  - `CanActivateFn` qui retourne toujours `true`.
+  - Pour l’instant, il ne bloque rien ; il sert surtout de place-holder si on
+    veut plus tard protéger certaines routes (ex : backoffice).
+
+- [auth.interceptor.ts](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/core/auth.interceptor.ts#L1-L18)
+  - Intercepteur HTTP fonctionnel (`HttpInterceptorFn`).
+  - Injecte l’[AuthService](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/auth.service.ts#L1-L173)
+    et lit le token via `getToken()`.
+  - S’il existe un token, ajoute le header :
+    - `Authorization: Bearer {token}`.
+
+Relation avec le backend :
+- Le backend ne sait pas qu’il y a un "core" Angular, mais il **attend** ce
+  header Authorization sur certains endpoints (ex : /api/auth/profile).
+- Le token utilisé ici n’est pas un vrai JWT mais simplement l’id utilisateur
+  (voir `buildAuthResponse` dans [AuthController](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/controller/AuthController.java#L29-L115)).
+
+
+2.4 Services Angular et liaison avec l’API backend
+--------------------------------------------------
+
+2.4.1 Base URL : environment vs ApiConfigService
+------------------------------------------------
+
+- Fichiers d’environnement :
+  - [environment.ts](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/environments/environment.ts#L1-L4)
+  - [environment.prod.ts](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/environments/environment.prod.ts#L1-L4)
+  - Contiennent : `apiUrl: 'http://localhost:8089/api'`.
+
+- Service centralisé :
+  - [ApiConfigService](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/api-config.service.ts#L1-L53)
+    - `getBaseUrl()` → 'http://localhost:8089/api'
+    - `getEndpointUrl('/sites')` → 'http://localhost:8089/api/sites'
+    - Prévu pour centraliser la configuration et éventuellement changer d’URL
+      sans modifier tous les services.
+
+Qui utilise quoi ?
+- **Services modernes** (site, equipment, booking, auth, etc.) :
+  - Ex : [SiteService](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/site.service.ts#L1-L86),
+    [EquipmentService](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/equipment.service.ts#L1-L110),
+    [BookingService](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/booking.service.ts#L1-L129),
+    [AuthService](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/auth.service.ts#L1-L173).
+  - Utilisent `ApiConfigService.getEndpointUrl('/...')`.
+  - Avantage : si on change la base URL, on le fait à un seul endroit.
+
+- **Composants backoffice** (sites, orders, bookings, billing, contracts, users) :
+  - Ex : [SitesComponent](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/backoffice/sites/sites.component.ts#L1-L23),
+    [OrdersComponent](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/backoffice/orders/orders.component.ts#L1-L23),
+    [BookingsComponent](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/backoffice/bookings/bookings.component.ts#L1-L7),
+    etc.
+  - Importent directement `environment` et construisent :
+    - `private apiUrl = \`${environment.apiUrl}/sites\`;`
+    - `private apiUrl = \`${environment.apiUrl}/equipment-orders\`;`
+
+Conclusion :
+- Les **services Angular** préfèrent `ApiConfigService`.
+- Certains **composants** utilisent encore directement `environment.apiUrl`.
+- Dans tous les cas, la base est la même : `http://localhost:8089/api`.
+
+2.4.2 Exemple de liaison concrète
+---------------------------------
+
+- Frontoffice /camping-sites :
+  - Composant : [camping-sites.component.ts](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/frontoffice/camping-sites/camping-sites.component.ts#L1-L37)
+  - Utilise `SiteService` pour appeler `/api/sites`, `/api/sites/active`,
+    `/api/sites/search`.
+  - Côté backend :
+    - [CampingSiteController](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/controller/CampingSiteController.java#L1-L103)
+      expose `GET /api/sites`, `/active`, `/search`, etc. (retourne pour l’instant des entités).
+
+- Frontoffice /equipment :
+  - Composant : [equipment.component.ts](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/frontoffice/equipment/equipment.component.ts#L1-L8)
+    + [EquipmentService](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/equipment.service.ts#L1-L110)
+  - Endpoints côté backend : `/api/equipment`, etc.
+
+- Backoffice /orders :
+  - [OrdersComponent](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/backoffice/orders/orders.component.ts#L1-L23)
+    fait des GET sur `${environment.apiUrl}/equipment-orders`.
+  - Côté backend : [EquipmentOrderController](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/controller/EquipmentOrderController.java#L1-L150).
+
+- Auth :
+  - [AuthService](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/auth.service.ts#L1-L173)
+    appelle `/api/auth/login`, `/register`, `/profile`, etc.
+  - Backend : [AuthController](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/controller/AuthController.java#L1-L115).
+  - Réponse : `{ token: userId, user: {...} }`, conforme à l’interface `AuthResponse`.
+
+
+2.5 Models Angular : pourquoi seulement camping-site ?
+------------------------------------------------------
+
+- Dossier : frontend/src/app/models
+  - Contient uniquement
+    [camping-site.model.ts](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/models/camping-site.model.ts#L1-L37)
+    avec :
+    - `CampingSite` : interface détaillée pour un site de camping
+    - `CampingSiteView` : version "applatie" pour l’affichage en liste.
+
+- Dans les services, beaucoup de types sont **définis localement** :
+  - [SiteService](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/site.service.ts#L1-L29) redéfinit aussi une interface `CampingSite`.
+  - [EquipmentService](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/equipment.service.ts#L1-L18) déclare `Equipment` directement dans le fichier.
+  - [BookingService](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/booking.service.ts#L1-L18) déclare `Booking` sur place.
+
+Pourquoi seulement un fichier dans models/ ?
+- Pour l’examen, seul le modèle "camping site" a été extrait dans un dossier
+  central `models/` car il est utilisé dans plusieurs écrans (frontoffice +
+  backoffice).
+- Les autres entités ont été laissées dans leurs services pour simplifier la
+  structure (moins de fichiers à manipuler).
+- Techniquement, on pourrait factoriser et créer `equipment.model.ts`,
+  `booking.model.ts`, etc., mais ce n’était pas strictement nécessaire pour
+  la démo.
+
+
+3. QUELS DTO SONT VRAIMENT UTILISÉS PAR ANGULAR ?
+=================================================
+
+Angular ne "voit" pas les classes Java, il ne voit que le JSON. On peut
+cependant lier :
+- les interfaces TypeScript (côté frontend)
+- aux DTO / entités retournés par les contrôleurs (côté backend).
+
+Dans ce projet :
+
+- Auth :
+  - Angular utilise l’interface `AuthResponse` définie dans
+    [auth.service.ts](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/auth.service.ts#L20-L30).
+  - Le backend renvoie un `Map<String,Object>` construit dans
+    [AuthController.buildAuthResponse](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/controller/AuthController.java#L94-L113),
+    qui a exactement cette forme.
+  - Le DTO `AngularAuthResponseDTO` existe mais n’est pas utilisé par le
+    contrôleur ; il est juste prêt dans `AngularDTOConverter`.
+
+- Réservations :
+  - Angular n’a pas encore une interface Booking parfaitement alignée sur
+    `ReservationDTO`, mais il consomme quand même les endpoints `/api/bookings`
+    exposés par [BookingController](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/src/main/java/tn/esprit/exam/controller/BookingController.java#L13-L105),
+    qui utilisent `ReservationDTO`.
+
+- Sites de camping :
+  - Angular frontoffice/backoffice appelle `/api/sites` et récupère des
+    `CampingSite` (entités JPA) ou des DTO quand on utilisera `CampingSiteService`.
+  - Le modèle TypeScript `CampingSite` est cohérent avec `CampingSiteDTO`
+    (mêmes champs principaux).
+
+- Équipements :
+  - Angular utilise l’interface `Equipment` locale dans
+    [equipment.service.ts](file:///c:/Users/user/Desktop/exam-tv-s2-2223/campconnect/frontend/src/app/services/equipment.service.ts#L6-L18).
+  - Le backend manipule `EquipmentDTO` dans `EquipmentServiceImpl`, mais certains
+    contrôleurs peuvent encore renvoyer des entités.
+
+Les DTO du package `dto.angular` ne sont donc **pas encore câblés** dans les
+contrôleurs. Ce sont des modèles de sortie potentiels si on voulait une API
+strictement alignée sur les interfaces Angular.
+
+
+4. SYNTHÈSE
+===========
+
+- Skeleton backend :
+  - Entrée : ExamApplication.
+  - Config : CorsConfig (CORS), DataInitializer (seeding via data.sql).
+  - Couches :
+    - entity + repository
+    - service (logique métier, DTO "métier", exceptions)
+    - controller (expose `/api/...`).
+  - DTO :
+    - `tn.esprit.exam.dto` : utilisés par les services/contrôleurs actuels.
+    - `tn.esprit.exam.dto.angular` : prêts mais non exposés directement.
+  - Exceptions + GlobalExceptionHandler pour des erreurs JSON homogènes.
+  - Util/regex :
+    - ValidationUtil avec un Pattern pour valider les emails.
+
+- Skeleton frontend :
+  - Angular 17 en mode **standalone** (pas de modules).
+  - app.routes + frontoffice.routes + backoffice.routes pilotent la navigation.
+  - core/ :
+    - auth.guard (placeholder, tout est ouvert).
+    - auth.interceptor (ajoute Authorization Bearer {token}).
+  - services/ :
+    - appellent l’API via `ApiConfigService` ou directement `environment.apiUrl`.
+  - models/ :
+    - uniquement `camping-site.model.ts` pour centraliser ce modèle très utilisé.
+
+Liaison frontend ↔ backend :
+- Base URL partagée : `http://localhost:8089/api` (environment + ApiConfigService).
+- CORS : autorise le domaine Angular 4200.
+- Auth : token simple (id utilisateur) stocké dans localStorage, injecté par
+  l’interceptor dans les appels protégés.
+
