@@ -1,0 +1,90 @@
+name: Frontend CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'backoffice/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - 'backoffice/**'
+
+jobs:
+  build-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: frontend
+
+      - name: Run tests
+        run: npm test -- --watch=false --browsers=ChromeHeadless
+        working-directory: frontend
+
+      - name: Build Angular
+        run: npm run build -- --configuration production
+        working-directory: frontend
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/dist/campconnect-frontend/
+
+  docker-build-push-frontend:
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/campconnect-frontend:latest
+            ${{ secrets.DOCKER_USERNAME }}/campconnect-frontend:${{ github.sha }}
+
+  docker-build-push-backoffice:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push backoffice image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backoffice
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/campconnect-backoffice:latest
+            ${{ secrets.DOCKER_USERNAME }}/campconnect-backoffice:${{ github.sha }}
