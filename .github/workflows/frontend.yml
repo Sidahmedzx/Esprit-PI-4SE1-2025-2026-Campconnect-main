@@ -31,7 +31,7 @@ jobs:
         working-directory: frontend
 
       - name: Run tests
-        run: npm test -- --no-watch --no-progress
+        run: npm test
         working-directory: frontend
         continue-on-error: true
 
