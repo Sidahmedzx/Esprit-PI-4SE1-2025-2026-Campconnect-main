@@ -43,21 +43,13 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .authorizeHttpRequests(auth -> auth
-                        // Permettre explicitement les requêtes OPTIONS pour CORS
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        
-                        // Routes publiques d'authentification (PLUS LARGE)
                         .requestMatchers("/api/auth/**").permitAll()
-                        
-                        // Ressources statiques et documentation (accès public)
+                        .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/sites/**", "/api/equipment/**", "/api/camping-sites/**").permitAll()
                         .requestMatchers("/api-docs", "/api-docs/**", "/v2/api-docs", "/v3/api-docs/**", "/swagger-resources/**", "/swagger-ui/**", "/swagger-ui.html", "/webjars/**").permitAll()
-                        
-                        // Routes protégées par rôle
                         .requestMatchers("/api/admin/**", "/api/users/**", "/api/users").hasRole("ADMIN")
                         .requestMatchers("/api/analytics/**").hasAnyRole("ADMIN", "OWNER")
-                        
-                        // Tout le reste nécessite une authentification
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(ex -> ex
@@ -107,7 +99,6 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Autoriser spécifiquement localhost:4200
         configuration.setAllowedOrigins(List.of("http://localhost:4200", "http://127.0.0.1:4200"));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin"));
