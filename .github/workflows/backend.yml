@@ -3,9 +3,6 @@ name: Backend CI/CD
 on:
   push:
     branches: [main]
-    paths:
-      - 'backend/**'
-
 jobs:
   build-backend:
     runs-on: ubuntu-latest
@@ -22,7 +19,13 @@ jobs:
 
       - name: Build backend
         run: mvn clean package -DskipTests
-        working-directory: backend
+        working-directory: .   # racine du repo
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: target/*.jar
 
   docker-build-push-backend:
     needs: build-backend
@@ -41,7 +44,8 @@ jobs:
       - name: Build and push backend image
         uses: docker/build-push-action@v5
         with:
-          context: ./backend
+          context: .      # racine du repo
+          file: Dockerfile  # Dockerfile à la racine
           push: true
           tags: |
             sidahmed1511/campconnect-backend:latest
