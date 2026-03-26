@@ -43,7 +43,8 @@ public class AuthServiceImpl implements IAuthService {
     private final AuthenticationManager authenticationManager;
     private final CustomUserDetailsService userDetailsService;
     private final PasswordResetTokenRepository tokenRepository;
-    private final JavaMailSender mailSender;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private JavaMailSender mailSender;
 
     @Override
     @Transactional
